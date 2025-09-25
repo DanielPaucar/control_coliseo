@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
           const pngFam = await generarQRpng(codigoFam, "FAMILIAR", `${codigoFam}.png`);
           qrFiles.push({ filename: `${codigoFam}.png`, path: path.join(process.cwd(), "public", pngFam.replace(/^\//, "")) });
 
+          //Enivia al correo intitucional
           // enviar correo con ambos QR
           /* if (correo) {
             await sendMail(
