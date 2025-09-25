@@ -25,7 +25,7 @@ export default function EscanerPage() {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setMsg(`✅ ${data.message}`); // Mostramos el mensaje con usos disponibles
+        setMsg(`${data.message}`); // Mostramos el mensaje con usos disponibles
       } else {
         setMsg(`❌ Error: ${data.error || "No se pudo registrar el ingreso"}`);
       }
