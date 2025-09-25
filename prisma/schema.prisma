@@ -1,0 +1,71 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Persona {
+  id_persona   Int       @id @default(autoincrement())
+  nombre       String
+  apellido     String?
+  cedula       String?   @unique
+  correo       String?
+  tipo_persona TipoPersona
+  estado       Boolean   @default(true)
+
+  codigoqr     CodigoQR[]
+}
+
+model CodigoQR {
+  id_codigo    Int       @id @default(autoincrement())
+  codigo       String    @unique
+  tipo_qr      TipoQR
+  max_usos     Int       @default(1)
+  usos_actual  Int       @default(0)
+
+  personaId    Int?
+  persona      Persona?  @relation(fields: [personaId], references: [id_persona])
+
+  ingresos     Ingreso[]
+}
+
+model Ingreso {
+  id_ingreso   Int      @id @default(autoincrement())
+  fecha        DateTime @default(now())
+  codigoqrId   Int
+  codigoqr     CodigoQR @relation(fields: [codigoqrId], references: [id_codigo])
+}
+
+
+model Importacion {
+  id             Int      @id @default(autoincrement())
+  archivo        String                 // nombre del archivo subido (opcional)
+  usuario        String?                // quien importa (email o username), opcional
+  fecha          DateTime @default(now())
+  total_registros Int     @default(0)
+  exitosos       Int     @default(0)
+  fallidos       Int     @default(0)
+  errores        Json?                   // lista de errores (estructura JSON)
+}
+
+
+enum TipoPersona {
+  estudiante
+  familiar
+  visitante
+}
+
+enum TipoQR {
+  est
+  fam
+  vis
+}
