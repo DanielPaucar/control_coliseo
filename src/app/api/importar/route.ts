@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+/*  */import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import * as XLSX from "xlsx";
 import path from "path";
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
           qrFiles.push({ filename: `${codigoFam}.png`, path: path.join(process.cwd(), "public", pngFam.replace(/^\//, "")) });
 
           // enviar correo con ambos QR
-          if (correo) {
+          /* if (correo) {
             await sendMail(
               correo,
               "🎟️ Tus códigos QR para el evento",
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
               <p>Presenta estos códigos al ingreso. ¡Te esperamos!</p>
               `
             );
-          }
+          } */
         } else if (tipo_persona === "visitante") {
           const codigoVis = `VIS-${persona.id_persona}-${Date.now().toString().slice(-6)}`;
           await prisma.codigoQR.create({
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
               persona: { connect: { id_persona: persona.id_persona } },
             },
           });
-          if (correo) {
+/*           if (correo) {
             const pngVis = await generarQRpng(codigoVis, "VISITANTE", `${codigoVis}.png`);
             await sendMail(
               correo,
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
               `Hola ${nombre}, adjuntamos tu código QR de visitante.`,
               [{ filename: `${codigoVis}.png`, path: path.join(process.cwd(), "public", pngVis.replace(/^\//, "")) }]
             );
-          }
+          } */
         }
 
         exitosos++;
