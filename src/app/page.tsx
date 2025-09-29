@@ -25,6 +25,12 @@ export default function Home() {
           📋 Generar QR Visitantes
         </Link>
         <Link
+          href="/generar"
+          className="bg-orange-400 text-white rounded-xl p-6 shadow hover:bg-purple-700 text-center"
+        >
+          📋 Generar QR Adisional
+        </Link>
+        <Link
           href="/dashboard"
           className="bg-purple-600 text-white rounded-xl p-6 shadow hover:bg-purple-700 text-center"
         >

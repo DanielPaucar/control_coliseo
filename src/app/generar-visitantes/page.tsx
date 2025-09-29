@@ -36,9 +36,20 @@ export default function GenerarVisitantesPage() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-6">
-      <h1 className="text-2xl font-bold mb-4">Generar QR para Visitantes</h1>
+      <h1 className="text-4xl font-bold mb-4">Generar QR Adicional</h1>
 
       <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-sm">
+        <label className="block text-sm font-medium mb-2">
+          Cédula:
+        </label>
+        <input
+          type="number"
+          min="1"
+          value={cantidad}
+          onChange={(e) => setCantidad(parseInt(e.target.value))}
+          className="w-full border p-2 rounded-md mb-4"
+        />
+
         <label className="block text-sm font-medium mb-2">
           Número de QR a generar:
         </label>
