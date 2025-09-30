@@ -14,6 +14,7 @@ datasource db {
 }
 
 model Persona {
+  @@map("persona")
   id_persona   Int       @id @default(autoincrement())
   nombre       String
   apellido     String?
@@ -26,6 +27,7 @@ model Persona {
 }
 
 model CodigoQR {
+  @@map("codigoqr")
   id_codigo    Int       @id @default(autoincrement())
   codigo       String    @unique
   tipo_qr      TipoQR
@@ -39,6 +41,7 @@ model CodigoQR {
 }
 
 model Ingreso {
+  @@map("ingreso")
   id_ingreso   Int      @id @default(autoincrement())
   fecha        DateTime @default(now())
   codigoqrId   Int
@@ -47,6 +50,7 @@ model Ingreso {
 
 
 model Importacion {
+  @@map("importacion")
   id             Int      @id @default(autoincrement())
   archivo        String                 // nombre del archivo subido (opcional)
   usuario        String?                // quien importa (email o username), opcional
