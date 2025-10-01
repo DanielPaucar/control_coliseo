@@ -36,6 +36,7 @@ export async function sendMail(
   };
 
   try {
+    console.log(`📧 Enviando correo a ${to} con asunto "${subject}"`);
     const info = await transporter.sendMail(mailOptions);
     console.log(`📧 Correo enviado a ${to}: ${info.messageId}`);
     return info;

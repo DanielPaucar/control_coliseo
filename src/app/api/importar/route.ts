@@ -5,6 +5,7 @@ import path from "path";
 import { generarQRpng } from "@/lib/generarQR";
 import { sendMail } from "@/utils/mailer"; // tu función de envío
 import { v4 as uuidv4 } from "uuid";
+import { Prisma } from "@prisma/client";
 
 export async function POST(req: NextRequest) {
   try {
@@ -35,14 +36,51 @@ export async function POST(req: NextRequest) {
     const errores: any[] = [];
 
     for (const [index, r] of rows.entries()) {
+      let cedulaStr: string | null = null;
+
       try {
-        const nombre = r["Nombre"] || r["nombre"] || "";
-        const apellido = r["Apellido"] || r["apellido"] || "";
+        const nombre = (r["Nombre"] || r["nombre"] || "").toString().trim();
+        const apellido = (r["Apellido"] || r["apellido"] || "").toString().trim();
         const cedula = r["Cédula"] || r["Cedula"] || r["cedula"] || null;
-        const correo = r["Correo"] || r["correo"] || null;
+        const rawCorreo =
+          r["Correo"] ||
+          r["correo"] ||
+          r["Correo Institucional"] ||
+          r["correo institucional"] ||
+          r["Correo institucional"] ||
+          r["Email"] ||
+          r["email"] ||
+          r["Correo electronico"] ||
+          r["Correo electrónico"] ||
+          r["correoElectronico"] ||
+          null;
         const tipo_raw = (r["Tipo"] || r["tipo"] || "est").toLowerCase();
 
-        const cedulaStr = cedula ? String(cedula) : null;
+        const normalizeCedula = (value: unknown): string | null => {
+          if (value === null || value === undefined) return null;
+          if (typeof value === "number") {
+            return String(Math.trunc(value));
+          }
+          const cleaned = String(value).trim();
+          const digitsOnly = cleaned.replace(/\D+/g, "");
+          return digitsOnly || null;
+        };
+
+        cedulaStr = normalizeCedula(cedula);
+
+        const correoStr = rawCorreo !== null && rawCorreo !== undefined
+          ? String(rawCorreo).trim() || null
+          : null;
+
+        if (correoStr && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoStr)) {
+          fallidos++;
+          errores.push({
+            fila: index + 2,
+            motivo: "Correo inválido",
+            detalle: `El correo "${correoStr}" no tiene un formato válido`,
+          });
+          continue;
+        }
 
         // mapear al enum Prisma
         let tipo_persona: "estudiante" | "familiar" | "visitante";
@@ -51,13 +89,40 @@ export async function POST(req: NextRequest) {
         else if (tipo_raw === "vis" || tipo_raw === "visitante") tipo_persona = "visitante";
         else tipo_persona = "estudiante"; // default
 
-        // crear persona
-        const persona = await prisma.persona.create({
-          data: { nombre, apellido, cedula: cedulaStr, correo, tipo_persona },
-        });
+        let persona = null;
+        if (cedulaStr) {
+          persona = await prisma.persona.findUnique({
+            where: { cedula: cedulaStr },
+          });
+        }
+
+        if (!persona) {
+          persona = await prisma.persona.create({
+            data: {
+              nombre,
+              apellido,
+              cedula: cedulaStr,
+              correo: correoStr,
+              tipo_persona,
+            },
+          });
+        } else {
+          const updates: Prisma.PersonaUpdateInput = {};
+          if (nombre && nombre !== persona.nombre) updates.nombre = nombre;
+          if (apellido && apellido !== persona.apellido) updates.apellido = apellido;
+          if (correoStr && correoStr !== persona.correo) updates.correo = correoStr;
+          if (tipo_persona && tipo_persona !== persona.tipo_persona) updates.tipo_persona = tipo_persona;
+
+          if (Object.keys(updates).length) {
+            persona = await prisma.persona.update({
+              where: { id_persona: persona.id_persona },
+              data: updates,
+            });
+          }
+        }
 
         // Generar y guardar códigos QR
-        const qrFiles: { filename: string; path: string }[] = [];
+         const qrFiles: { filename: string; path: string }[] = [];
 
         if (tipo_persona === "estudiante") {
           // QR estudiante
@@ -89,14 +154,16 @@ export async function POST(req: NextRequest) {
           qrFiles.push({ filename: `${codigoFam}.png`, path: path.join(process.cwd(), "public", pngFam.replace(/^\//, "")) });
 
           // enviar correo con ambos QR
-          if (correo) {
+          const correoDestino = correoStr || persona.correo;
+          if (correoDestino) {
+            console.log(`📬 Preparando correo para ${correoDestino} - fila ${index + 2}`);
             await sendMail(
-              correo,
+              correoDestino,
               "🎟️ Tus códigos QR para el evento",
-              `Hola ${nombre}, adjuntamos tus códigos QR.`,
+              `Hola ${persona.nombre}, adjuntamos tus códigos QR.`,
               qrFiles,
               `
-              <p>Hola <b>${nombre} ${apellido}</b>,</p>
+              <p>Hola <b>${persona.nombre} ${persona.apellido ?? ""}</b>,</p>
               <p>A continuación encontrarás tus <b>códigos QR</b> para el ingreso al evento:</p>
               <ul>
                 <li>🎓 Código de estudiante: <b>${codigoEst}</b></li>
@@ -105,6 +172,9 @@ export async function POST(req: NextRequest) {
               <p>Presenta estos códigos al ingreso. ¡Te esperamos!</p>
               `
             );
+            console.log(`✅ Correo encolado para ${correoDestino}`);
+          } else {
+            console.warn(`⚠️ Sin correo para persona ${persona.id_persona} en fila ${index + 2}, se omite envío`);
           }
         } else if (tipo_persona === "visitante") {
           const codigoVis = `VIS-${persona.id_persona}-${Date.now().toString().slice(-6)}`;
@@ -131,7 +201,29 @@ export async function POST(req: NextRequest) {
         exitosos++;
       } catch (filaErr) {
         fallidos++;
-        errores.push({ fila: index + 2, motivo: "Error procesando fila", detalle: String(filaErr) });
+        if (cedulaStr) {
+          console.error(`❌ Error procesando fila ${index + 2} (cédula ${cedulaStr}):`, filaErr);
+        } else {
+          console.error(`❌ Error procesando fila ${index + 2}:`, filaErr);
+        }
+
+        if (
+          filaErr instanceof Prisma.PrismaClientKnownRequestError &&
+          filaErr.code === "P2002" &&
+          filaErr.meta?.target &&
+          Array.isArray(filaErr.meta.target) &&
+          filaErr.meta.target.includes("cedula")
+        ) {
+          errores.push({
+            fila: index + 2,
+            motivo: "Cédula duplicada",
+            detalle: cedulaStr
+              ? `La cédula ${cedulaStr} ya existe en la base de datos`
+              : "La cédula ya existe en la base de datos",
+          });
+        } else {
+          errores.push({ fila: index + 2, motivo: "Error procesando fila", detalle: String(filaErr) });
+        }
       }
     }
 
