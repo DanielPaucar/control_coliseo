@@ -52,10 +52,10 @@ export default function GenerarQRPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-6 bg-gray-100">
+    <div className="min-h-screen flex flex-col items-center p-6 bg-gray-100 text-gray-900">
       <h1 className="text-2xl font-bold mb-4">🎟️ Generar QR</h1>
 
-      <div className="bg-white shadow rounded p-6 w-full max-w-md space-y-4">
+      <div className="bg-white text-gray-900 shadow rounded p-6 w-full max-w-md space-y-4">
         <label className="flex items-center gap-2">
           <input
             type="checkbox"

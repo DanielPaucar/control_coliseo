@@ -5,8 +5,15 @@ import { useState } from "react";
 export default function GenerarVisitantesPage() {
   const [cantidad, setCantidad] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleGenerar = async () => {
+    setError("");
+    if (!Number.isFinite(cantidad) || cantidad < 1) {
+      setError("Ingresa una cantidad válida de códigos");
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch("/api/generar-visitantes", {
@@ -35,21 +42,10 @@ export default function GenerarVisitantesPage() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-6">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-6 text-gray-900">
       <h1 className="text-4xl font-bold mb-4">Generar QR Adicional</h1>
 
-      <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-sm">
-        <label className="block text-sm font-medium mb-2">
-          Cédula:
-        </label>
-        <input
-          type="number"
-          min="1"
-          value={cantidad}
-          onChange={(e) => setCantidad(parseInt(e.target.value))}
-          className="w-full border p-2 rounded-md mb-4"
-        />
-
+      <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-sm text-gray-900">
         <label className="block text-sm font-medium mb-2">
           Número de QR a generar:
         </label>
@@ -57,7 +53,7 @@ export default function GenerarVisitantesPage() {
           type="number"
           min="1"
           value={cantidad}
-          onChange={(e) => setCantidad(parseInt(e.target.value))}
+          onChange={(e) => setCantidad(Number(e.target.value))}
           className="w-full border p-2 rounded-md mb-4"
         />
 
@@ -68,6 +64,8 @@ export default function GenerarVisitantesPage() {
         >
           {loading ? "Generando..." : "Generar y Descargar PDF"}
         </button>
+
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
     </div>
   );

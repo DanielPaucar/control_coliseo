@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,53 +8,54 @@ datasource db {
 }
 
 model Persona {
-  @@map("persona")
-  id_persona   Int       @id @default(autoincrement())
+  id_persona   Int         @id @default(autoincrement())
   nombre       String
   apellido     String?
-  cedula       String?   @unique
+  cedula       String?     @unique
   correo       String?
   tipo_persona TipoPersona
-  estado       Boolean   @default(true)
-
+  estado       Boolean     @default(true)
   codigoqr     CodigoQR[]
+
+  @@map("persona")
 }
 
 model CodigoQR {
+  id_codigo   Int       @id @default(autoincrement())
+  codigo      String    @unique
+  tipo_qr     TipoQR
+  max_usos    Int       @default(1)
+  usos_actual Int       @default(0)
+  personaId   Int?
+  persona     Persona?  @relation(fields: [personaId], references: [id_persona])
+  ingresos    Ingreso[]
+
+  @@index([personaId], map: "codigoqr_personaId_fkey")
   @@map("codigoqr")
-  id_codigo    Int       @id @default(autoincrement())
-  codigo       String    @unique
-  tipo_qr      TipoQR
-  max_usos     Int       @default(1)
-  usos_actual  Int       @default(0)
-
-  personaId    Int?
-  persona      Persona?  @relation(fields: [personaId], references: [id_persona])
-
-  ingresos     Ingreso[]
 }
 
 model Ingreso {
-  @@map("ingreso")
-  id_ingreso   Int      @id @default(autoincrement())
-  fecha        DateTime @default(now())
-  codigoqrId   Int
-  codigoqr     CodigoQR @relation(fields: [codigoqrId], references: [id_codigo])
-}
+  id_ingreso Int      @id @default(autoincrement())
+  fecha      DateTime @default(now())
+  codigoqrId Int
+  codigoqr   CodigoQR @relation(fields: [codigoqrId], references: [id_codigo])
 
+  @@index([codigoqrId], map: "ingreso_codigoqrId_fkey")
+  @@map("ingreso")
+}
 
 model Importacion {
-  @@map("importacion")
-  id             Int      @id @default(autoincrement())
-  archivo        String                 // nombre del archivo subido (opcional)
-  usuario        String?                // quien importa (email o username), opcional
-  fecha          DateTime @default(now())
-  total_registros Int     @default(0)
-  exitosos       Int     @default(0)
-  fallidos       Int     @default(0)
-  errores        Json?                   // lista de errores (estructura JSON)
-}
+  id              Int      @id @default(autoincrement())
+  archivo         String
+  usuario         String?
+  fecha           DateTime @default(now())
+  total_registros Int      @default(0)
+  exitosos        Int      @default(0)
+  fallidos        Int      @default(0)
+  errores         Json?
 
+  @@map("importacion")
+}
 
 enum TipoPersona {
   estudiante

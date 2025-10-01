@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
         where: { cedula: String(cedula) },
       });
 
-      if (!persona || persona.tipo_persona !== "est") {
+      if (!persona || persona.tipo_persona !== "estudiante") {
         return NextResponse.json({ error: "Estudiante no encontrado" }, { status: 404 });
       }
 
@@ -79,4 +79,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Error al generar el QR" }, { status: 500 });
   }
 }
-

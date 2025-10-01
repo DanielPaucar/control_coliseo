@@ -23,11 +23,11 @@ export default function DashboardPage() {
   const COLORS = ["#3b82f6", "#22c55e", "#f97316"];
 
   return (
-    <main className="min-h-screen bg-gray-100 p-8">
+    <main className="min-h-screen bg-gray-100 p-8 text-gray-900">
       <h1 className="text-3xl font-bold mb-6">📊 Dashboard</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow">
+        <div className="bg-white p-6 rounded-xl shadow text-gray-900">
           <h2 className="text-xl font-bold mb-4">Resumen de ingresos</h2>
           <ResponsiveContainer width="100%" height={250}>
             <PieChart>
@@ -47,7 +47,7 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow">
+        <div className="bg-white p-6 rounded-xl shadow text-gray-900">
           <h2 className="text-xl font-bold mb-4">Últimos 10 ingresos</h2>
           <ul className="space-y-2">
             {data.ultimos.map((i: any) => (

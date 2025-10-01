@@ -45,12 +45,12 @@ export default function ImportarPage() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-6">
-      <main className="min-h-screen bg-gray-100 p-8">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-6 text-gray-900">
+      <main className="min-h-screen bg-gray-100 p-8 text-gray-900">
         <h1 className="text-3xl font-bold mb-6">📥 Importar Estudiantes (Excel)</h1>
         <form
           onSubmit={handleSubmit}
-          className="bg-white p-6 rounded-xl shadow w-full max-w-md space-y-4"
+          className="bg-white p-6 rounded-xl shadow w-full max-w-md space-y-4 text-gray-900"
         >
           {/* Archivo Excel */}
           <input

@@ -24,7 +24,7 @@ export async function sendMail(
   subject: string,
   text: string,
   attachments: { filename: string; path: string }[] = [],
-  html: string
+  html?: string
 ) {
   const mailOptions = {
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
@@ -32,7 +32,7 @@ export async function sendMail(
     subject,
     text,
     attachments,
-    html,
+    ...(html ? { html } : {}),
   };
 
   try {
