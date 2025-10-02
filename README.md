@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Control de eventos ISTE
 
-## Getting Started
+Aplicación interna para el control de ingreso a eventos mediante códigos QR y paneles de seguimiento.
 
-First, run the development server:
+## Requisitos de autenticación (Entra ID)
+
+- Configura la aplicación registrada en Entra ID con los siguientes grupos de seguridad:
+  - `app-eventos-admins` (`e10a3003-546f-4cd3-8236-d6c46b96c3f2`)
+  - `app-eventos-financiero` (`31474537-b620-4b3d-b47e-92df19199e08`)
+  - `app-eventos-guardia` (`9f5205f6-8328-4393-a6f5-95fd3330315f`)
+- Asegúrate de que el manifiesto de la app incluya el claim `groups` en el token ID.
+- Variables de entorno obligatorias:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+CLIENT_ID="<Application (client) ID>"
+CLIENT_SECRET="<Client secret value>"
+TENANT_ID="<Directory (tenant) ID>"
+AUTH_SECRET="<cadena aleatoria segura>"
+NEXTAUTH_URL="https://eventos.iste.edu.ec"
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+El `AUTH_SECRET` se usa para firmar los tokens de NextAuth y debe ser una cadena aleatoria segura (puedes generarla con `openssl rand -base64 32`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Desarrollo local
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+La aplicación estará disponible en [http://localhost:3002](http://localhost:3002).
