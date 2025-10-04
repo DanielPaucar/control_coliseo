@@ -7,8 +7,9 @@ import path from "path";
 export async function POST(req: NextRequest) {
   try {
     const { esEstudiante, cedula, max_usos } = await req.json();
+    const requestedMax = Number(max_usos);
 
-    if (!max_usos || max_usos <= 0) {
+    if (!Number.isFinite(requestedMax) || requestedMax <= 0) {
       return NextResponse.json({ error: "Debe especificar un número válido de usos" }, { status: 400 });
     }
 
@@ -21,12 +22,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Estudiante no encontrado" }, { status: 404 });
       }
 
+      const totalPermitidos = Math.max(1, requestedMax);
       const codigo = `EST-ADD-${persona.id_persona}-${Date.now().toString().slice(-6)}`;
       await prisma.codigoQR.create({
         data: {
           codigo,
           tipo_qr: "est",
-          max_usos,
+          max_usos: totalPermitidos,
           usos_actual: 0,
           persona: { connect: { id_persona: persona.id_persona } },
         },
@@ -35,32 +37,46 @@ export async function POST(req: NextRequest) {
       const pngFile = await generarQRpng(codigo, `${persona.nombre} ${persona.apellido}`, `${codigo}.png`);
 
       if (persona.correo) {
+        const invitadosAdicionales = Math.max(0, totalPermitidos - 1);
+        const invitadosTexto = invitadosAdicionales === 0
+          ? "sin invitados adicionales"
+          : invitadosAdicionales === 1
+          ? "con 1 invitado adicional"
+          : `con ${invitadosAdicionales} invitados adicionales`;
+
         await sendMail(
           persona.correo,
-          "🎓 QR adicional estudiante",
-          `Hola ${persona.nombre}, aquí está tu QR adicional con ${max_usos} usos.`,
+          "🎟️ Tu código QR para el evento",
+          `Hola ${persona.nombre}, adjuntamos tu código QR único. Este código permite el ingreso para ${totalPermitidos} persona(s) (${invitadosTexto}). Presenta el QR en el acceso.`,
           [
             {
               filename: `${codigo}.png`,
               path: path.join(process.cwd(), "public", pngFile.replace(/^\//, "")),
             },
-          ]
+          ],
+          `
+          <p>Hola <strong>${persona.nombre} ${persona.apellido ?? ""}</strong>,</p>
+          <p>Adjuntamos tu <strong>código QR único</strong> para ingresar al evento.</p>
+          <p>Este QR habilita el acceso para <strong>${totalPermitidos} persona${totalPermitidos === 1 ? "" : "s"}</strong> (${invitadosTexto}).</p>
+          <p>Presenta el código en el punto de control de ingreso. ¡Te esperamos!</p>
+          `
         );
       }
 
       return NextResponse.json({
         success: true,
-        mensaje: "QR generado y enviado al correo",
+        mensaje: `QR generado con capacidad para ${totalPermitidos} persona${totalPermitidos === 1 ? "" : "s"}`,
         codigo,
       });
     } else {
+      const totalPermitidos = Math.max(1, requestedMax);
       const codigo = `VIS-ADD-${Date.now().toString().slice(-6)}`;
 
       await prisma.codigoQR.create({
         data: {
           codigo,
           tipo_qr: "vis",
-          max_usos,
+          max_usos: totalPermitidos,
           usos_actual: 0,
         },
       });
@@ -69,7 +85,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        mensaje: "QR visitante generado",
+        mensaje: `QR visitante generado con capacidad para ${totalPermitidos} persona${totalPermitidos === 1 ? "" : "s"}`,
         codigo,
         imagen: `/public/${pngFile}`,
       });

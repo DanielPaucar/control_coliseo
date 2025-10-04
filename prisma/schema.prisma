@@ -29,6 +29,7 @@ model CodigoQR {
   personaId   Int?
   persona     Persona?  @relation(fields: [personaId], references: [id_persona])
   ingresos    Ingreso[]
+  ventas      VentaAdicional[]
 
   @@index([personaId], map: "codigoqr_personaId_fkey")
   @@map("codigoqr")
@@ -55,6 +56,43 @@ model Importacion {
   errores         Json?
 
   @@map("importacion")
+}
+
+model CajaTurno {
+  id         Int              @id @default(autoincrement())
+  abierto    Boolean          @default(true)
+  abiertoPor String?
+  cerradoPor String?
+  abiertoAt  DateTime         @default(now())
+  cerradoAt  DateTime?
+  ventas     VentaAdicional[]
+
+  @@map("caja_turno")
+}
+
+model VentaAdicional {
+  id               Int       @id @default(autoincrement())
+  codigoId         Int
+  cajaId           Int
+  precio           Decimal   @db.Decimal(10, 2)
+  cantidad         Int       @default(1)
+  correo           String?
+  enviadoPorCorreo Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  codigo           CodigoQR  @relation(fields: [codigoId], references: [id_codigo])
+  caja             CajaTurno @relation(fields: [cajaId], references: [id])
+
+  @@index([codigoId])
+  @@index([cajaId])
+  @@map("venta_adicional")
+}
+
+model Configuracion {
+  clave         String   @id
+  valor         String
+  actualizadoEn DateTime @default(now())
+
+  @@map("configuracion")
 }
 
 enum TipoPersona {

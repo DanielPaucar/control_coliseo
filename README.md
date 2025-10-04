@@ -29,3 +29,9 @@ npm run dev
 ```
 
 La aplicación estará disponible en [http://localhost:3002](http://localhost:3002).
+
+## Personalización visual
+
+- Paleta institucional aplicada: `#003976`, `#00a6f2`, `#29598c`.
+- Coloca el logotipo principal en `public/iste-logo.png` (se usa en el login y dashboard).
+- Puedes añadir variantes de logotipos o fondos adicionales en `public/assets/` y referenciarlos desde los componentes.
