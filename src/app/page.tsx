@@ -46,6 +46,13 @@ const optionsByRole: Record<AppUserRole, MenuOption[]> = {
       gradient: BRAND_GRADIENTS.hybrid,
     },
     {
+      href: "/gestion-qr",
+      label: "Gestión de QR",
+      icon: "✉️",
+      description: "Reenvía códigos y ajusta cupos por cédula",
+      gradient: BRAND_GRADIENTS.sky,
+    },
+    {
       href: "/dashboard",
       label: "Dashboard",
       icon: "📊",

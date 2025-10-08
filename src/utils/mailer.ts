@@ -14,16 +14,23 @@ export const transporter = nodemailer.createTransport({
 });
 
 // tipado de adjuntos según Nodemailer
-interface MailAttachment {
-  filename: string;
-  path: string;
-}
+type MailAttachment =
+  | {
+      filename: string;
+      path: string;
+    }
+  | {
+      filename: string;
+      content: Buffer | string;
+      contentType?: string;
+      encoding?: string;
+    };
 
 export async function sendMail(
   to: string,
   subject: string,
   text: string,
-  attachments: { filename: string; path: string }[] = [],
+  attachments: MailAttachment[] = [],
   html?: string
 ) {
   const mailOptions = {

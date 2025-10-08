@@ -1,5 +1,12 @@
 import type { NextConfig } from "next";
 
+const permissionsPolicyHeader = [
+  {
+    key: "Permissions-Policy",
+    value: "camera=(self)",
+  },
+];
+
 const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
@@ -14,6 +21,14 @@ const nextConfig: NextConfig = {
       }
     }
     return config;
+  },
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: permissionsPolicyHeader,
+      },
+    ];
   },
 };
 

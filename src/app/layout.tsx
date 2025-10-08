@@ -36,7 +36,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Providers>
-          <header className="pointer-events-none fixed left-4 top-4 z-[1000] flex items-center">
+          <header className="pointer-events-none fixed bottom-4 right-4 z-[1000] flex items-center">
             <Link
               href="/"
               className="pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/70 text-brand-primary shadow-lg shadow-black/20 backdrop-blur transition hover:scale-105 hover:bg-white"

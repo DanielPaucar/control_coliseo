@@ -1,16 +1,19 @@
 import QRCode from "qrcode";
 import * as PImage from "pureimage";
-import fs from "fs";
-import path from "path";
+import { PassThrough, Readable } from "stream";
 
 /**
  * Genera un QR PNG con texto debajo.
  * @param codigo - El código único para el QR
  * @param texto - La leyenda a mostrar debajo
  * @param fileName - Nombre del archivo PNG
- * @returns Ruta relativa donde se guarda el PNG
+ * @returns Objeto con buffer y dataURL del PNG generado
  */
-export async function generarQRpng(codigo: string, texto: string, fileName: string): Promise<string> {
+export async function generarQRpng(
+  codigo: string,
+  texto: string,
+  fileName: string
+): Promise<{ buffer: Buffer; dataUrl: string; fileName: string }> {
   // Generar el QR en buffer
   const qrBuffer = await QRCode.toBuffer(codigo, { width: 300, margin: 2 });
 
@@ -37,22 +40,39 @@ export async function generarQRpng(codigo: string, texto: string, fileName: stri
   const textWidth = ctx.measureText(texto).width;
   ctx.fillText(texto, (width - textWidth) / 2, height - 10);
 
-  // Guardar en /public/qrcodes
-  const qrDir = path.join(process.cwd(), "public", "qrcodes");
-  if (!fs.existsSync(qrDir)) fs.mkdirSync(qrDir, { recursive: true });
-  const outputPath = path.join(qrDir, fileName);
+  const pngBuffer = await encodeToBuffer(img);
 
-  await PImage.encodePNGToStream(img, fs.createWriteStream(outputPath));
-
-  // Retornar ruta relativa para servir desde /public
-  return `/qrcodes/${fileName}`;
+  return {
+    buffer: pngBuffer,
+    dataUrl: `data:image/png;base64,${pngBuffer.toString("base64")}`,
+    fileName,
+  };
 }
 
 // Helper: convertir Buffer en ReadableStream
-import { Readable } from "stream";
 function BufferToStream(buffer: Buffer) {
   const stream = new Readable();
   stream.push(buffer);
   stream.push(null);
   return stream;
+}
+
+async function encodeToBuffer(image: PImage.Bitmap) {
+  const chunks: Buffer[] = [];
+
+  return new Promise<Buffer>((resolve, reject) => {
+    const passThrough = new PassThrough();
+
+    passThrough.on("data", (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    passThrough.on("error", reject);
+    passThrough.on("end", () => resolve(Buffer.concat(chunks)));
+
+    PImage.encodePNGToStream(image, passThrough)
+      .then(() => {
+        passThrough.end();
+      })
+      .catch(reject);
+  });
 }

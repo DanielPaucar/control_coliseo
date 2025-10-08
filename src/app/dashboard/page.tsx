@@ -22,6 +22,7 @@ type DashboardData = {
   adicionales: number;
   ingresosAgrupados: AggregatedIngreso[];
   selectedDate: string | null;
+  totalHoy: number;
 };
 
 const CHART_COLORS = ["#003976", "#29598c", "#00a6f2"];
@@ -77,6 +78,11 @@ export default function DashboardPage() {
       { name: "Entradas adicionales", value: data?.adicionales ?? 0 },
     ],
     [data?.estudiantes, data?.familiares, data?.adicionales]
+  );
+
+  const todayLabel = useMemo(
+    () => new Date().toLocaleDateString("es-EC", { day: "2-digit", month: "long" }),
+    []
   );
 
   const hasData = (data?.total ?? 0) > 0;
@@ -150,7 +156,12 @@ export default function DashboardPage() {
 
         <section className="space-y-4">
           <h2 className="text-lg font-semibold text-white/90">Indicadores generales</h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <article className="card-surface rounded-3xl px-6 py-6 text-brand-primary">
+              <p className="text-xs uppercase tracking-[0.32em] text-brand-accent/70">Asistentes hoy</p>
+              <p className="mt-2 text-3xl font-semibold">{data?.totalHoy ?? 0}</p>
+              <p className="text-xs text-brand-accent/70">Registros únicos del {todayLabel}</p>
+            </article>
             <article className="card-surface rounded-3xl px-6 py-6 text-brand-primary">
               <p className="text-xs uppercase tracking-[0.32em] text-brand-accent/70">Estudiantes</p>
               <p className="mt-2 text-3xl font-semibold">{data?.estudiantes ?? 0}</p>

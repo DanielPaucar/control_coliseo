@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import PDFDocument from "pdfkit";
-import path from "path";
-import QRCode from "qrcode";
 import prisma from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { generarQRpng } from "@/lib/generarQR";
+import { createPdfDocument } from "@/lib/pdf";
 import { sendMail } from "@/utils/mailer";
 
 const PRECIO_KEY = "precio_boleto";
@@ -97,16 +95,12 @@ async function buildTicketPdf({
   precioUnitario: number;
   total: number;
 }) {
-  const fontPath = path.join(process.cwd(), "public", "fonts", "Roboto-Regular.ttf");
-  const doc = new PDFDocument({ margin: 40 });
+  const doc = createPdfDocument({ margin: 40 });
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const finished = new Promise<Buffer>((resolve) => {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
-
-  doc.registerFont("Roboto", fontPath);
-
   doc.roundedRect(30, 30, 550, 780, 16).stroke("#003976");
   doc.font("Roboto").fontSize(22).fillColor("#003976").text("Eventos ISTE", { align: "center" });
   doc.moveDown(0.5);
@@ -145,16 +139,12 @@ async function buildClosingReportPdf({
   totalRecaudado: number;
   cerradoPor: string;
 }) {
-  const fontPath = path.join(process.cwd(), "public", "fonts", "Roboto-Regular.ttf");
-  const doc = new PDFDocument({ margin: 36 });
+  const doc = createPdfDocument({ margin: 36 });
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const finished = new Promise<Buffer>((resolve) => {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
-
-  doc.registerFont("Roboto", fontPath);
-
   doc.font("Roboto").fontSize(24).fillColor("#003976").text("Reporte de cierre de caja", { align: "center" });
   doc.moveDown();
 
@@ -449,10 +439,8 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      const qrPath = await generarQRpng(codigo, "Eventos ISTE", `${codigo}.png`);
-      const qrDataUrl = await QRCode.toDataURL(codigo, { width: 220 });
-      const qrImage = qrDataUrl.replace(/^data:image\/png;base64,/, "");
-      const qrBuffer = Buffer.from(qrImage, "base64");
+      const qrAsset = await generarQRpng(codigo, "Eventos ISTE", `${codigo}.png`);
+      const qrBuffer = qrAsset.buffer;
 
       await prisma.ventaAdicional.create({
         data: {
@@ -467,20 +455,81 @@ export async function POST(req: NextRequest) {
 
       if (enviarCorreo) {
         const html = `
-          <p>Hola,</p>
-          <p>Adjuntamos el código QR para el ingreso de ${cantidad} persona(s).</p>
-          <p>Precio unitario: <strong>$${precioUnitario.toFixed(2)}</strong>. Monto total: <strong>$${totalRecaudado.toFixed(2)}</strong>.</p>
-          <p>Comparte el QR con los asistentes. ¡Gracias!</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#f4f6fb;font-family:'Segoe UI',Arial,sans-serif;color:#0b1d33;border-radius:18px;overflow:hidden;">
+            <tr>
+              <td style="padding:0;">
+                <div style="background-color:#003976; padding:20px; text-align:center;">
+                  <img src="https://yosoyistealmacenamiento.blob.core.windows.net/directorio-telefonico/iste.png" alt="ISTE" style="max-width:240px;"/>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 32px 24px;">
+                <p style="margin:0 0 12px;font-size:18px;font-weight:600;">Hola,</p>
+                <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
+                  Adjuntamos el código QR para el ingreso de <strong>${cantidad} persona(s)</strong>.
+                </p>
+                <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
+                  ¡Felicitaciones por este gran paso! Te esperamos para celebrar la ceremonia de graduación.
+                </p>
+                <ul style="margin:0 0 12px 18px;padding:0;font-size:15px;line-height:1.6;">
+                  <li style="margin-bottom:8px;">
+                    Cuida este código y compártelo únicamente con tus personas invitadas.
+                  </li>
+                  <li>
+                    Desde los <strong>10 años</strong> se requiere boleto individual.
+                  </li>
+                </ul>
+                <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
+                  ¿Necesitas entradas adicionales? Contáctanos por WhatsApp o llamada al
+                  <a href="tel:+593995569101" style="color:#003976;text-decoration:none;font-weight:600;">099 556 9101</a>
+                  o
+                  <a href="tel:+593999791099" style="color:#003976;text-decoration:none;font-weight:600;">099 979 1099</a>.
+                </p>
+                <p style="margin:0;font-size:15px;line-height:1.6;">
+                  Precio unitario: <strong>$${precioUnitario.toFixed(2)}</strong><br/>
+                  Monto total: <strong>$${totalRecaudado.toFixed(2)}</strong>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 32px 28px;">
+                <div style="margin-top:12px;border-radius:16px;background:#ffffff;border:1px solid #d6e3f5;padding:20px;font-size:14px;color:#0b1d33;">
+                  <p style="margin:0;font-weight:600;">Consejo rápido</p>
+                  <p style="margin:8px 0 0;line-height:1.6;">Presenta el código en la entrada y asegúrate de que la pantalla tenga buen brillo para agilizar el acceso.</p>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 32px 28px;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;border:1px solid #d6e3f5;">
+                  <tr>
+                    <td style="padding:20px;text-align:justify;font-size:13px;color:#0b1d33;line-height:1.6;border-bottom:1px solid #2167b1;">
+                      “En cumplimiento con lo establecido en la Ley Orgánica de Protección de Datos Personales y el Reglamento,
+                      el ISTE garantiza la confidencialidad y privacidad de los datos personales que trata. Este correo es
+                      confidencial. Si no eres el destinatario, está prohibido usarlo, copiarlo o difundirlo; devuélvelo y elimínalo.”
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 20px 16px;text-align:center;font-size:12px;color:#7f8c8d;">
+                      © 2025 Unidad de TEI - ISTE. Todos los derechos reservados.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
         `;
 
         await sendMail(
           emailLimpio,
           "🎟️ Tu código QR adicional",
-          `Adjuntamos el código QR válido para ${cantidad} persona(s). Total recaudado: $${totalRecaudado.toFixed(2)}.`,
+          `Adjuntamos el código QR válido para ${cantidad} persona(s). Recuerda: cuida tu código, cobra entrada desde los 10 años y para boletos extra comunícate al 099 556 9101 o 099 979 1099. Total recaudado: $${totalRecaudado.toFixed(2)}.`,
           [
             {
               filename: `${codigo}.png`,
-              path: path.join(process.cwd(), "public", qrPath.replace(/^\//, "")),
+              content: qrAsset.buffer,
+              contentType: "image/png",
             },
           ],
           html

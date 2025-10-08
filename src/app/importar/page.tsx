@@ -25,6 +25,9 @@ type FailedEmail = {
   fila: number;
   email: string | null;
   reason: string;
+  cedula?: string | null;
+  nombre?: string | null;
+  apellido?: string | null;
 };
 
 type StreamEvent =
@@ -92,6 +95,43 @@ export default function ImportarPage() {
     }
     return Math.min(100, Math.round((progress.processed / progress.total) * 100));
   }, [progress]);
+
+  const hasFailedEmails = failedEmails.length > 0;
+
+  const handleDownloadFailedReport = useCallback(() => {
+    if (!hasFailedEmails) {
+      return;
+    }
+
+    const formatCsvField = (value: unknown) => {
+      const text = value ?? "";
+      return `"${String(text).replace(/"/g, '""')}"`;
+    };
+
+    const header = ["Fila", "Cedula", "Nombre", "Apellido", "Correo", "Razon"].map(formatCsvField).join(",");
+    const rows = failedEmails.map((item) =>
+      [
+        formatCsvField(item.fila),
+        formatCsvField(item.cedula ?? ""),
+        formatCsvField(item.nombre ?? ""),
+        formatCsvField(item.apellido ?? ""),
+        formatCsvField(item.email ?? ""),
+        formatCsvField(item.reason ?? ""),
+      ].join(",")
+    );
+
+    const csvContent = [header, ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `correos-no-enviados-${timestamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [failedEmails, hasFailedEmails]);
 
   const handleFileChange = useCallback(async (selectedFile: File | null) => {
     setFile(selectedFile);
@@ -439,15 +479,31 @@ export default function ImportarPage() {
               </p>
             ) : null}
 
-            {failedEmails.length > 0 ? (
+            {hasFailedEmails ? (
               <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
-                <p className="font-semibold">Correos no enviados ({failedEmails.length})</p>
-                <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto text-xs">
-                  {failedEmails.map((item, index) => (
-                    <li key={`${item.fila}-${item.email ?? "sin-correo"}-${index}`}>
-                      Fila {item.fila}: {item.email ?? "(sin correo)"} · {item.reason}
-                    </li>
-                  ))}
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <p className="font-semibold">Correos no enviados ({failedEmails.length})</p>
+                  <button
+                    type="button"
+                    onClick={handleDownloadFailedReport}
+                    className="inline-flex items-center justify-center rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-red-700 shadow-sm shadow-red-200 transition hover:bg-white"
+                  >
+                    Descargar reporte
+                  </button>
+                </div>
+                <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto text-xs text-red-800">
+                  {failedEmails.map((item, index) => {
+                    const nombreCompleto = [item.nombre, item.apellido].filter(Boolean).join(" ").trim();
+                    return (
+                      <li key={`${item.fila}-${item.email ?? "sin-correo"}-${index}`}>
+                        Fila {item.fila}
+                        {item.cedula ? ` · ${item.cedula}` : ""}
+                        {nombreCompleto ? ` · ${nombreCompleto}` : ""}
+                        {" · "}
+                        {item.email ?? "(sin correo)"} — {item.reason}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ) : null}
