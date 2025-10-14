@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
 
-  if (!session || role !== "admin") {
+  if (!session || (role !== "admin" && role !== "financiero")) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role;
 
-  if (!session || role !== "admin") {
+  if (!session || (role !== "admin" && role !== "financiero")) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 

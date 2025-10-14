@@ -35,7 +35,8 @@ export function LoginView({ errorParam }: LoginViewProps) {
     return ERROR_MESSAGES[errorParam] ?? ERROR_MESSAGES.Default;
   }, [errorParam]);
 
-  const isLoading = status === "loading" || status === "authenticated";
+  const isCheckingSession = status === "loading";
+  const isAuthenticated = status === "authenticated";
 
   return (
     <main className="min-h-screen bg-brand-gradient text-gray-100">
@@ -75,13 +76,19 @@ export function LoginView({ errorParam }: LoginViewProps) {
               </p>
             ) : null}
 
+            {isCheckingSession ? (
+              <p className="rounded-xl border border-brand-secondary/30 bg-white/70 px-4 py-3 text-sm text-brand-primary">
+                Verificando si ya tienes una sesión activa…
+              </p>
+            ) : null}
+
             <button
               type="button"
               onClick={() => signIn("azure-ad", { callbackUrl: "/" })}
-              disabled={isLoading}
+              disabled={isAuthenticated}
               className="w-full rounded-xl bg-brand-secondary py-3 text-base font-semibold text-white shadow-md shadow-brand-secondary/40 transition hover:bg-sky-400 focus:outline-none focus:ring focus:ring-brand-secondary/40 disabled:cursor-not-allowed disabled:bg-sky-300"
             >
-              {isLoading ? "Verificando sesión…" : "Iniciar sesión con Entra ID"}
+              {isAuthenticated ? "Redirigiendo…" : "Iniciar sesión con Entra ID"}
             </button>
 
             <div className="text-xs text-gray-500 space-y-2 text-center">

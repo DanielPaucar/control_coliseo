@@ -126,12 +126,27 @@ export default function GenerarVisitantesPage() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ClosureSummary | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [limiteBoletos, setLimiteBoletos] = useState<number>(0);
+  const [limiteDraft, setLimiteDraft] = useState("0");
+  const [limiteSaving, setLimiteSaving] = useState(false);
+  const [totalVendidos, setTotalVendidos] = useState(0);
+  const [openCajasModal, setOpenCajasModal] = useState(false);
+  const [openCajas, setOpenCajas] = useState<CajaState[]>([]);
+  const [openCajasLoading, setOpenCajasLoading] = useState(false);
+  const [forceClosingId, setForceClosingId] = useState<number | null>(null);
 
   const puedeEditarPrecio = role === "admin";
+  const puedeEditarLimite = role === "admin";
   const cajaAbierta = caja?.abierto ?? false;
   const correoValido = correo.trim().length > 0;
   const canManageClosures = role === "admin";
   const canViewClosures = canManageClosures || role === "finance" || role === "financiero";
+  const limiteDisponible = useMemo(() => {
+    if (!limiteBoletos || limiteBoletos <= 0) {
+      return null;
+    }
+    return Math.max(limiteBoletos - totalVendidos, 0);
+  }, [limiteBoletos, totalVendidos]);
 
   useEffect(() => {
     if (!mensaje) {
@@ -160,6 +175,9 @@ export default function GenerarVisitantesPage() {
       setCaja(data.caja ?? null);
       setHistorial(data.historial ?? []);
       setClosures(data.closures ?? []);
+      setLimiteBoletos(data.limiteBoletos ?? 0);
+      setLimiteDraft(String(data.limiteBoletos ?? 0));
+      setTotalVendidos(data.totalVendidos ?? 0);
       if (data.warning) {
         setMensaje((prev) => prev ?? data.warning);
         setMensajeTipo((prev) => (prev === "error" ? prev : "info"));
@@ -205,6 +223,38 @@ export default function GenerarVisitantesPage() {
     }
     setClosuresOpen(true);
     void refreshClosures();
+  };
+
+  const handleOpenPendingCajas = () => {
+    if (!canManageClosures) {
+      return;
+    }
+    setOpenCajasModal(true);
+    setOpenCajasLoading(true);
+    setOpenCajas([]);
+    void (async () => {
+      try {
+        const response = await fetch("/api/generar-visitantes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "openSessions" }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || "No se pudieron obtener las cajas abiertas");
+        }
+        if (data && Array.isArray(data.abiertas)) {
+          setOpenCajas(data.abiertas);
+        } else {
+          setOpenCajas([]);
+        }
+      } catch (error: unknown) {
+        setMensaje(getErrorMessage(error, "No se pudieron obtener las cajas abiertas"));
+        setMensajeTipo("error");
+      } finally {
+        setOpenCajasLoading(false);
+      }
+    })();
   };
 
   useEffect(() => {
@@ -296,6 +346,40 @@ export default function GenerarVisitantesPage() {
       setMensajeTipo("error");
     } finally {
       setPrecioSaving(false);
+    }
+  };
+
+  const handleGuardarLimite = async () => {
+    if (!puedeEditarLimite) return;
+    const valor = Number(limiteDraft);
+    if (!Number.isFinite(valor) || valor < 0) {
+      setMensaje("Ingresa un límite válido (0 o mayor). Usa 0 para sin límite.");
+      setMensajeTipo("error");
+      return;
+    }
+
+    setLimiteSaving(true);
+    setMensaje(null);
+    try {
+      const response = await fetch("/api/generar-visitantes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updateLimit", limite: valor }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "No se pudo actualizar el límite");
+      }
+      const limite = data.limiteBoletos ?? Math.floor(valor);
+      setLimiteBoletos(limite);
+      setLimiteDraft(String(limite));
+      setMensaje("Límite de boletos actualizado");
+      setMensajeTipo("ok");
+    } catch (error: unknown) {
+      setMensaje(getErrorMessage(error, "Error actualizando el límite"));
+      setMensajeTipo("error");
+    } finally {
+      setLimiteSaving(false);
     }
   };
 
@@ -418,6 +502,34 @@ export default function GenerarVisitantesPage() {
     }
   };
 
+  const forceCloseCaja = async (cajaId: number) => {
+    if (!canManageClosures) {
+      return;
+    }
+    setForceClosingId(cajaId);
+    setMensaje(null);
+    try {
+      const response = await fetch("/api/generar-visitantes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "forceClose", cajaId }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "No se pudo cerrar la caja seleccionada");
+      }
+      await cargarEstado();
+      setOpenCajas((prev) => prev.filter((caja) => caja.id !== cajaId));
+      setMensaje("Caja cerrada manualmente y reporte enviado.");
+      setMensajeTipo("ok");
+    } catch (error: unknown) {
+      setMensaje(getErrorMessage(error, "No se pudo cerrar la caja seleccionada"));
+      setMensajeTipo("error");
+    } finally {
+      setForceClosingId(null);
+    }
+  };
+
   const resumenCaja = useMemo(() => {
     if (!caja) {
       return {
@@ -495,6 +607,77 @@ export default function GenerarVisitantesPage() {
                 >
                   {confirmingClose ? "Cerrando caja…" : "Confirmar cierre"}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {openCajasModal && (
+          <div className="fixed inset-0 z-35 flex items-center justify-center bg-black/45 px-4">
+            <div className="card-surface w-full max-w-3xl rounded-3xl px-6 py-6 text-brand-primary">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-semibold">Cajas abiertas pendientes</h2>
+                  <p className="mt-1 text-sm text-brand-accent/80">
+                    Cierra las cajas que quedaron abiertas para garantizar la consistencia de los reportes.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-full border border-brand-secondary/20 p-2 text-brand-accent/70 transition hover:bg-brand-secondary/10 hover:text-brand-primary"
+                  onClick={() => setOpenCajasModal(false)}
+                >
+                  <span className="sr-only">Cerrar</span>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" stroke="currentColor" strokeWidth={1.8} fill="none">
+                    <path d="M6 6l12 12M6 18L18 6" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mt-5 space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                {openCajasLoading ? (
+                  <p className="text-sm text-brand-accent/80">Cargando cajas abiertas…</p>
+                ) : openCajas.length === 0 ? (
+                  <p className="text-sm text-brand-accent/80">No hay cajas abiertas en este momento.</p>
+                ) : (
+                  openCajas.map((cajaAbierta) => {
+                    const fecha = formatDateTime(cajaAbierta.abiertoAt);
+                    return (
+                      <article
+                        key={cajaAbierta.id}
+                        className="rounded-2xl border border-brand-secondary/20 bg-white/80 px-5 py-5 shadow-inner"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-brand-primary">Caja #{cajaAbierta.id}</p>
+                            <p className="text-xs uppercase tracking-[0.3em] text-brand-accent/70">
+                              Abierta por {cajaAbierta.abiertoPor ?? "—"} · {fecha}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-2xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => forceCloseCaja(cajaAbierta.id)}
+                            disabled={forceClosingId === cajaAbierta.id}
+                          >
+                            {forceClosingId === cajaAbierta.id ? "Cerrando…" : "Cerrar caja"}
+                          </button>
+                        </div>
+                        <div className="mt-3 grid gap-3 text-sm text-brand-accent/80 sm:grid-cols-2">
+                          <div className="rounded-2xl bg-brand-secondary/10 px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.3em] text-brand-accent/70">Boletos emitidos</p>
+                            <p className="text-lg font-semibold text-brand-primary">{cajaAbierta.totalTickets}</p>
+                          </div>
+                          <div className="rounded-2xl bg-brand-secondary/10 px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.3em] text-brand-accent/70">Total recaudado</p>
+                            <p className="text-lg font-semibold text-brand-primary">
+                              {currency(cajaAbierta.totalRecaudado)}
+                            </p>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -717,8 +900,25 @@ export default function GenerarVisitantesPage() {
             <div className="rounded-2xl bg-brand-secondary/10 px-5 py-3 text-sm text-brand-primary">
               <p className="font-semibold text-brand-primary">{resumenCaja.estado}</p>
               <p className="text-brand-accent/80">{resumenCaja.detalle}</p>
+              {puedeEditarLimite ? (
+                <p className="mt-1 text-xs text-brand-accent/70">
+                  Vendidos: <span className="font-semibold text-brand-primary">{totalVendidos}</span>
+                  {limiteBoletos > 0
+                    ? ` · Disponible(s): ${Math.max(limiteBoletos - totalVendidos, 0)}`
+                    : " · Sin límite establecido"}
+                </p>
+              ) : null}
             </div>
             <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
+              {canManageClosures ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-2xl border border-brand-secondary/20 px-5 py-2 text-sm font-semibold text-brand-primary transition hover:bg-brand-secondary/10"
+                  onClick={handleOpenPendingCajas}
+                >
+                  Cajas abiertas
+                </button>
+              ) : null}
               {canViewClosures && (
                 <button
                   type="button"
@@ -742,47 +942,137 @@ export default function GenerarVisitantesPage() {
 
         <section className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
           <div className="flex flex-col gap-5 lg:h-full">
-            <div className="card-surface w-full rounded-3xl px-5 py-6 text-brand-primary">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">Precio por boleto</h2>
-                  <p className="text-sm text-brand-accent/80">
-                    Define el valor que se cobrará por cada acceso emitido para visitantes.
-                  </p>
+            {puedeEditarLimite ? (
+              <div className="card-surface w-full rounded-3xl px-5 py-6 text-brand-primary">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold text-brand-primary">Control rápido de boletos</h2>
+                  </div>
+                  <div className="rounded-2xl bg-brand-secondary/10 px-4 py-3 text-sm text-brand-accent/80">
+                    <p>
+                      Vendidos: <span className="font-semibold text-brand-primary">{totalVendidos}</span>
+                    </p>
+                    <p>
+                      Disponibles:{" "}
+                      <span className="font-semibold text-brand-primary">
+                        {limiteDisponible === null ? "Sin límite" : limiteDisponible}
+                      </span>
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right text-sm text-brand-accent/80">
-                  <p className="font-semibold text-brand-primary">{currency(precioUnitario)}</p>
-                  <p>Precio actual</p>
+                <div className="mt-6 space-y-6">
+                  <section className="flex flex-col gap-4 rounded-3xl border border-brand-secondary/20 bg-white/90 px-5 py-5 shadow-inner">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-brand-primary">Límite de boletos</h3>
+                        <p className="text-sm text-brand-accent/80">
+                          Usa <strong>0</strong> para dejar la venta sin límite.
+                        </p>
+                      </div>
+                      <span className="rounded-2xl bg-brand-secondary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-brand-accent/70">
+                        {limiteBoletos > 0 ? `${limiteBoletos} máx.` : "Sin límite"}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <label className="flex flex-1 flex-col gap-2 text-sm text-brand-accent/80">
+                        <input
+                          className="rounded-2xl border border-brand-secondary/30 bg-white px-4 py-3 text-base font-semibold text-brand-primary outline-none transition focus:border-brand-primary/60 focus:ring-2 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          type="number"
+                          min={0}
+                          value={limiteDraft}
+                          onChange={(event) => setLimiteDraft(event.target.value)}
+                          disabled={limiteSaving}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center rounded-2xl bg-brand-primary px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={handleGuardarLimite}
+                        disabled={limiteSaving}
+                      >
+                        {limiteSaving ? "Guardando…" : "Guardar límite"}
+                      </button>
+                    </div>
+                  </section>
+                  <section className="flex flex-col gap-4 rounded-3xl border border-brand-secondary/20 bg-white/90 px-5 py-5 shadow-inner">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-brand-primary">Precio por boleto</h3>
+                        <p className="text-sm text-brand-accent/80">
+                          Define el valor a cobrar por cada acceso adicional emitido.
+                        </p>
+                      </div>
+                      <span className="rounded-2xl bg-brand-secondary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-brand-accent/70">
+                        {currency(precioUnitario)}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <label className="flex flex-1 flex-col gap-2 text-sm text-brand-accent/80">
+                        <input
+                          className="rounded-2xl border border-brand-secondary/30 bg-white px-4 py-3 text-base font-semibold text-brand-primary outline-none transition focus:border-brand-primary/60 focus:ring-2 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={precioDraft}
+                          onChange={(event) => setPrecioDraft(event.target.value)}
+                          disabled={!puedeEditarPrecio || precioSaving}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center rounded-2xl bg-brand-primary px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={handleGuardarPrecio}
+                        disabled={!puedeEditarPrecio || precioSaving}
+                      >
+                        {precioSaving ? "Guardando…" : "Guardar precio"}
+                      </button>
+                    </div>
+                  </section>
                 </div>
               </div>
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <label className="flex flex-1 flex-col gap-2 text-sm text-brand-accent/80">
-                  Nuevo precio
-                  <input
-                    className="rounded-2xl border border-brand-secondary/20 bg-white/90 px-4 py-3 text-base font-semibold text-brand-primary outline-none transition focus:border-brand-primary/60 focus:ring-2 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={precioDraft}
-                    onChange={(event) => setPrecioDraft(event.target.value)}
+            ) : (
+              <div className="card-surface w-full rounded-3xl px-5 py-6 text-brand-primary">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold">Precio por boleto</h2>
+                    <p className="text-sm text-brand-accent/80">
+                      Define el valor que se cobrará por cada acceso emitido para visitantes.
+                    </p>
+                  </div>
+                  <div className="text-right text-sm text-brand-accent/80">
+                    <p className="font-semibold text-brand-primary">{currency(precioUnitario)}</p>
+                    <p>Precio actual</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <label className="flex flex-1 flex-col gap-2 text-sm text-brand-accent/80">
+                    Nuevo precio
+                    <input
+                      className="rounded-2xl border border-brand-secondary/20 bg-white/90 px-4 py-3 text-base font-semibold text-brand-primary outline-none transition focus:border-brand-primary/60 focus:ring-2 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={precioDraft}
+                      onChange={(event) => setPrecioDraft(event.target.value)}
+                      disabled={!puedeEditarPrecio || precioSaving}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-2xl bg-brand-primary px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleGuardarPrecio}
                     disabled={!puedeEditarPrecio || precioSaving}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center rounded-2xl bg-brand-primary px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={handleGuardarPrecio}
-                  disabled={!puedeEditarPrecio || precioSaving}
-                >
-                  {precioSaving ? "Guardando…" : "Guardar precio"}
-                </button>
+                  >
+                    {precioSaving ? "Guardando…" : "Guardar precio"}
+                  </button>
+                </div>
+                {!puedeEditarPrecio && (
+                  <p className="mt-3 text-xs text-brand-accent/70">
+                    Solo los usuarios administradores pueden actualizar el precio unitario.
+                  </p>
+                )}
               </div>
-              {!puedeEditarPrecio && (
-                <p className="mt-3 text-xs text-brand-accent/70">
-                  Solo los usuarios administradores pueden actualizar el precio unitario.
-                </p>
-              )}
-            </div>
+            )}
 
             <div className="card-surface rounded-3xl px-5 py-7 text-brand-primary">
               <h2 className="text-xl font-semibold">Generar pases para visitantes</h2>

@@ -7,7 +7,9 @@ import { createPdfDocument } from "@/lib/pdf";
 import { sendMail } from "@/utils/mailer";
 
 const PRECIO_KEY = "precio_boleto";
+const LIMIT_KEY = "limite_boletos";
 const DEFAULT_PRICE = 5;
+const DEFAULT_LIMIT = 0;
 const REPORT_RECIPIENTS = ["alexis.veloz@iste.edu.ec", "soporte.ti@iste.edu.ec"];
 
 type VentaLike = {
@@ -37,18 +39,47 @@ async function ensurePrecioUnitario() {
   }
 }
 
+async function ensureLimiteBoletos() {
+  if (!hasConfiguracionModel) {
+    return { clave: LIMIT_KEY, valor: DEFAULT_LIMIT.toString() };
+  }
+
+  try {
+    const existing = await prisma.configuracion.findUnique({ where: { clave: LIMIT_KEY } });
+    if (existing) {
+      return existing;
+    }
+    return prisma.configuracion.create({ data: { clave: LIMIT_KEY, valor: DEFAULT_LIMIT.toString() } });
+  } catch (error) {
+    console.warn("Configuración de límite no disponible, usando valor por defecto", error);
+    return { clave: LIMIT_KEY, valor: DEFAULT_LIMIT.toString() };
+  }
+}
+
 function parseDecimal(value: string | null | undefined) {
   const numeric = Number(value ?? "0");
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-async function obtenerCajaActiva() {
+function parseInteger(value: string | null | undefined) {
+  const numeric = Number.parseInt(value ?? "0", 10);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+async function obtenerCajaActiva(userEmail?: string | null, role?: string | null) {
   if (!hasCajaModel) {
     return null;
   }
+  const whereClause =
+    role === "admin" || !userEmail
+      ? { abierto: true }
+      : {
+          abierto: true,
+          abiertoPor: userEmail,
+        };
 
   return prisma.cajaTurno.findFirst({
-    where: { abierto: true },
+    where: whereClause,
     include: {
       ventas: {
         orderBy: { createdAt: "desc" },
@@ -66,7 +97,9 @@ function calcularBoletos(ventas: Array<{ cantidad?: number | string | null }>) {
   return ventas.reduce((acc, venta) => acc + Number(venta.cantidad ?? 1), 0);
 }
 
-function mapCaja(caja: Awaited<ReturnType<typeof obtenerCajaActiva>>) {
+function mapCaja<T extends { id: number; abierto: boolean; abiertoPor: string | null; abiertoAt: Date; ventas: VentaLike[] }>(
+  caja: T | null
+) {
   if (!caja) {
     return null;
   }
@@ -80,6 +113,21 @@ function mapCaja(caja: Awaited<ReturnType<typeof obtenerCajaActiva>>) {
     totalTickets,
     totalRecaudado,
   };
+}
+
+async function obtenerResumenGlobalVentas() {
+  if (!hasCajaModel) {
+    return { totalVendidos: 0 };
+  }
+
+  const aggregate = await prisma.ventaAdicional.aggregate({
+    _sum: { cantidad: true },
+  });
+
+  const totalVendidosRaw = aggregate._sum?.cantidad;
+  const totalVendidos = totalVendidosRaw ? Number(totalVendidosRaw) : 0;
+
+  return { totalVendidos };
 }
 
 async function buildTicketPdf({
@@ -232,7 +280,15 @@ function summarizeClosure(closure: {
 }
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  const role = session.user?.role ?? null;
+  const userEmail = session.user?.email ?? "";
+
   await ensurePrecioUnitario();
+  await ensureLimiteBoletos();
 
   if (!hasConfiguracionModel || !hasCajaModel) {
     return NextResponse.json({
@@ -240,29 +296,51 @@ export async function GET() {
       caja: null,
       historial: [],
       closures: [],
+      limiteBoletos: DEFAULT_LIMIT,
+      totalVendidos: 0,
+      limiteDisponible: DEFAULT_LIMIT > 0 ? DEFAULT_LIMIT : null,
       warning:
         "El modelo de caja aún no está disponible en la base de datos. Se muestra el precio por defecto de $5.",
     });
   }
 
-  const [precioConfig, cajaActiva, historial, closures] = await Promise.all([
+  const [precioConfig, limiteConfig, cajaActiva, historial, closures, resumenGlobal] = await Promise.all([
     prisma.configuracion.findUnique({ where: { clave: PRECIO_KEY } }),
-    obtenerCajaActiva(),
+    prisma.configuracion.findUnique({ where: { clave: LIMIT_KEY } }),
+    obtenerCajaActiva(role === "admin" ? undefined : userEmail, role),
     prisma.ventaAdicional.findMany({
+      where:
+        role === "admin"
+          ? undefined
+          : {
+              caja: {
+                abiertoPor: userEmail,
+              },
+            },
       orderBy: { createdAt: "desc" },
       take: 25,
-      include: { codigo: true },
+      include: { codigo: true, caja: true },
     }),
     prisma.cajaTurno.findMany({
-      where: { abierto: false },
+      where:
+        role === "admin"
+          ? { abierto: false }
+          : {
+              abierto: false,
+              abiertoPor: userEmail,
+            },
       orderBy: { cerradoAt: "desc" },
       take: 20,
       include: { ventas: true },
     }),
+    obtenerResumenGlobalVentas(),
   ]);
 
   const precioUnitario = parseDecimal(precioConfig?.valor ?? DEFAULT_PRICE.toString());
+  const limiteBoletos = parseInteger(limiteConfig?.valor ?? DEFAULT_LIMIT.toString());
   const cajaMap = mapCaja(cajaActiva);
+  const totalVendidos = resumenGlobal.totalVendidos;
+  const limiteDisponible = limiteBoletos > 0 ? Math.max(limiteBoletos - totalVendidos, 0) : null;
 
   const historialMap = historial.map((venta) => {
     const cantidad = Number(venta.cantidad ?? 1);
@@ -287,11 +365,17 @@ export async function GET() {
     caja: cajaMap,
     historial: historialMap,
     closures: closuresMap,
+    limiteBoletos,
+    totalVendidos,
+    limiteDisponible,
   });
 }
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
   const role = session?.user?.role;
   const userEmail = session?.user?.email ?? "";
 
@@ -303,16 +387,22 @@ export async function POST(req: NextRequest) {
   }
 
   await ensurePrecioUnitario();
+  await ensureLimiteBoletos();
 
   switch (action) {
     case "open": {
       if (!hasCajaModel) {
         return NextResponse.json({ error: "Funcionalidad de caja no disponible. Ejecuta la migración." }, { status: 503 });
       }
+      if (!userEmail) {
+        return NextResponse.json({ error: "No se pudo identificar al usuario actual" }, { status: 400 });
+      }
 
-      const existing = await obtenerCajaActiva();
+      const isAdmin = role === "admin";
+      const existing = await obtenerCajaActiva(isAdmin ? undefined : userEmail, role);
       if (existing) {
-        return NextResponse.json({ error: "Ya existe una caja abierta" }, { status: 400 });
+        const message = isAdmin ? "Ya existe una caja abierta" : "Ya tienes una caja abierta actualmente.";
+        return NextResponse.json({ error: message }, { status: 400 });
       }
 
       const nueva = await prisma.cajaTurno.create({
@@ -332,10 +422,14 @@ export async function POST(req: NextRequest) {
       if (!hasCajaModel) {
         return NextResponse.json({ error: "Funcionalidad de caja no disponible. Ejecuta la migración." }, { status: 503 });
       }
+      if (!userEmail) {
+        return NextResponse.json({ error: "No se pudo identificar al usuario actual" }, { status: 400 });
+      }
 
-      const caja = await obtenerCajaActiva();
+      const caja = await obtenerCajaActiva(role === "admin" ? undefined : userEmail, role);
       if (!caja) {
-        return NextResponse.json({ error: "No hay una caja abierta" }, { status: 400 });
+        const message = role === "admin" ? "No hay una caja abierta" : "No tienes una caja abierta en curso.";
+        return NextResponse.json({ error: message }, { status: 400 });
       }
 
       const ventas = await prisma.ventaAdicional.findMany({
@@ -402,6 +496,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    case "updateLimit": {
+      if (role !== "admin") {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+      }
+
+      const nuevoLimiteParam = Number(body?.limite);
+      if (!Number.isFinite(nuevoLimiteParam) || nuevoLimiteParam < 0) {
+        return NextResponse.json({ error: "Ingresa un límite válido (0 o mayor)" }, { status: 400 });
+      }
+
+      const nuevoLimite = Math.floor(nuevoLimiteParam);
+
+      if (!hasConfiguracionModel) {
+        return NextResponse.json({
+          limiteBoletos: DEFAULT_LIMIT,
+          warning: "Configuración no disponible. Se mantiene el límite por defecto (sin restricción).",
+        });
+      }
+
+      try {
+        const actualizado = await prisma.configuracion.update({
+          where: { clave: LIMIT_KEY },
+          data: { valor: nuevoLimite.toString(), actualizadoEn: new Date() },
+        });
+
+        return NextResponse.json({ limiteBoletos: parseInteger(actualizado.valor) });
+      } catch (error) {
+        console.error("No se pudo actualizar el límite de boletos", error);
+        return NextResponse.json(
+          { error: "No se pudo actualizar el límite en la base de datos", limiteBoletos: DEFAULT_LIMIT },
+          { status: 500 }
+        );
+      }
+    }
+
     case "generate": {
       if (!hasCajaModel) {
         return NextResponse.json({ error: "Funcionalidad de caja no disponible. Ejecuta la migración." }, { status: 503 });
@@ -412,19 +541,43 @@ export async function POST(req: NextRequest) {
         correo?: string | null;
         sendEmail?: boolean;
       };
+      if (!userEmail) {
+        return NextResponse.json({ error: "No se pudo identificar al usuario actual" }, { status: 400 });
+      }
 
       if (!cantidad || cantidad <= 0) {
         return NextResponse.json({ error: "Debes indicar la cantidad de QR a generar" }, { status: 400 });
       }
 
-      const caja = await obtenerCajaActiva();
+      const caja = await obtenerCajaActiva(role === "admin" ? undefined : userEmail, role);
       if (!caja) {
-        return NextResponse.json({ error: "Debes abrir la caja antes de generar QR" }, { status: 400 });
+        return NextResponse.json(
+          { error: role === "admin" ? "Debes abrir la caja antes de generar QR" : "Debes abrir tu caja antes de generar QR" },
+          { status: 400 }
+        );
       }
 
       const precioConfig = await prisma.configuracion.findUnique({ where: { clave: PRECIO_KEY } });
       const precioUnitario = parseDecimal(precioConfig?.valor ?? DEFAULT_PRICE.toString());
       const totalRecaudado = precioUnitario * cantidad;
+
+      const limiteConfig = await prisma.configuracion.findUnique({ where: { clave: LIMIT_KEY } });
+      const limiteBoletos = parseInteger(limiteConfig?.valor ?? DEFAULT_LIMIT.toString());
+      if (limiteBoletos > 0) {
+        const { totalVendidos } = await obtenerResumenGlobalVentas();
+        if (totalVendidos + cantidad > limiteBoletos) {
+          const disponibles = Math.max(limiteBoletos - totalVendidos, 0);
+          return NextResponse.json(
+            {
+              error: `No se pueden emitir más boletos. Disponibles restantes: ${disponibles}`,
+              limiteBoletos,
+              totalVendidos,
+              disponibles,
+            },
+            { status: 400 }
+          );
+        }
+      }
 
       const emailLimpio = typeof correo === "string" ? correo.trim() : "";
       const enviarCorreo = Boolean(sendEmail && emailLimpio);
@@ -470,8 +623,9 @@ export async function POST(req: NextRequest) {
                   Adjuntamos el código QR para el ingreso de <strong>${cantidad} persona(s)</strong>.
                 </p>
                 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
-                  ¡Felicitaciones por este gran paso! Te esperamos para celebrar la ceremonia de graduación.
+                  ¡Te esperamos para celebrar la ceremonia de graduación.!
                 </p>
+                <p style="margin:0 0 12px;font-size:18px;font-weight:600;"><strong>Importante</strong> </p>
                 <ul style="margin:0 0 12px 18px;padding:0;font-size:15px;line-height:1.6;">
                   <li style="margin-bottom:8px;">
                     Cuida este código y compártelo únicamente con tus personas invitadas.
@@ -481,10 +635,7 @@ export async function POST(req: NextRequest) {
                   </li>
                 </ul>
                 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
-                  ¿Necesitas entradas adicionales? Contáctanos por WhatsApp o llamada al
-                  <a href="tel:+593995569101" style="color:#003976;text-decoration:none;font-weight:600;">099 556 9101</a>
-                  o
-                  <a href="tel:+593999791099" style="color:#003976;text-decoration:none;font-weight:600;">099 979 1099</a>.
+                  Si necesitas entradas adicionales, estarán disponibles el día del evento en el lugar donde se desarrollará la ceremonia.
                 </p>
                 <p style="margin:0;font-size:15px;line-height:1.6;">
                   Precio unitario: <strong>$${precioUnitario.toFixed(2)}</strong><br/>
@@ -524,7 +675,7 @@ export async function POST(req: NextRequest) {
         await sendMail(
           emailLimpio,
           "🎟️ Tu código QR adicional",
-          `Adjuntamos el código QR válido para ${cantidad} persona(s). Recuerda: cuida tu código, cobra entrada desde los 10 años y para boletos extra comunícate al 099 556 9101 o 099 979 1099. Total recaudado: $${totalRecaudado.toFixed(2)}.`,
+          `Adjuntamos el código QR válido para ${cantidad} persona(s). Recuerda: cuida tu código y desde los 10 años se cobra entrada. Las entradas adicionales estarán a la venta el día del evento en el mismo lugar. Total recaudado: $${totalRecaudado.toFixed(2)}.`,
           [
             {
               filename: `${codigo}.png`,
@@ -580,6 +731,9 @@ export async function POST(req: NextRequest) {
 
       if (!cierre || cierre.abierto) {
         return NextResponse.json({ error: "Cierre no encontrado" }, { status: 404 });
+      }
+      if (role !== "admin" && cierre.abiertoPor !== userEmail) {
+        return NextResponse.json({ error: "No autorizado para ver este cierre" }, { status: 403 });
       }
 
       const totalBoletos = calcularBoletos(cierre.ventas);
@@ -662,14 +816,95 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ closures: [] });
       }
 
+      const whereClause =
+        role === "admin"
+          ? { abierto: false }
+          : {
+              abierto: false,
+              abiertoPor: userEmail,
+            };
+
       const closures = await prisma.cajaTurno.findMany({
-        where: { abierto: false },
+        where: whereClause,
         orderBy: { cerradoAt: "desc" },
         take: 20,
         include: { ventas: true },
       });
 
       return NextResponse.json({ closures: closures.map(summarizeClosure) });
+    }
+
+    case "openSessions": {
+      if (role !== "admin") {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+      }
+      if (!hasCajaModel) {
+        return NextResponse.json({ abiertas: [] });
+      }
+
+      const abiertas = await prisma.cajaTurno.findMany({
+        where: { abierto: true },
+        orderBy: { abiertoAt: "desc" },
+        include: {
+          ventas: {
+            include: { codigo: true },
+          },
+        },
+      });
+
+      return NextResponse.json({ abiertas: abiertas.map((caja) => mapCaja(caja)) });
+    }
+
+    case "forceClose": {
+      if (role !== "admin") {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+      }
+      if (!hasCajaModel) {
+        return NextResponse.json({ error: "Funcionalidad de caja no disponible. Ejecuta la migración." }, { status: 503 });
+      }
+
+      const cajaId = Number(body?.cajaId);
+      if (!Number.isInteger(cajaId)) {
+        return NextResponse.json({ error: "Identificador de caja inválido" }, { status: 400 });
+      }
+
+      const caja = await prisma.cajaTurno.findUnique({
+        where: { id: cajaId },
+        include: {
+          ventas: {
+            orderBy: { createdAt: "asc" },
+            include: { codigo: true },
+          },
+        },
+      });
+
+      if (!caja || !caja.abierto) {
+        return NextResponse.json({ error: "Caja no encontrada o ya cerrada" }, { status: 404 });
+      }
+
+      const totalBoletos = calcularBoletos(caja.ventas);
+      const totalRecaudado = calcularTotales(caja.ventas);
+
+      const reportPdf = await buildClosingReportPdf({
+        caja,
+        ventas: caja.ventas,
+        totalBoletos,
+        totalRecaudado,
+        cerradoPor: userEmail,
+      });
+      await sendClosingReport({ buffer: reportPdf, totalBoletos, totalRecaudado });
+
+      const cerrada = await prisma.cajaTurno.update({
+        where: { id: caja.id },
+        data: {
+          abierto: false,
+          cerradoAt: new Date(),
+          cerradoPor: userEmail,
+        },
+        include: { ventas: true },
+      });
+
+      return NextResponse.json({ caja: mapCaja(cerrada) });
     }
 
     default:

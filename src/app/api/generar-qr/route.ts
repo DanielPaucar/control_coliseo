@@ -41,12 +41,12 @@ export async function POST(req: NextRequest) {
           ? "sin invitados adicionales"
           : invitadosAdicionales === 1
           ? "con 1 invitado adicional"
-          : `con ${invitadosAdicionales} invitados adicionales`;
+          : `Estudiante y ${invitadosAdicionales} invitados adicionales`;
 
         await sendMail(
           persona.correo,
           "🎓 Tu código QR para el evnto de Graduación",
-          `Hola ${persona.nombre}, adjuntamos tu código QR único. Cuida este código y compártelo solo con tus invitados. Desde los 10 años se requiere boleto. Para entradas adicionales comunícate al 099 556 9101 o 099 979 1099. Este QR permite el ingreso para ${totalPermitidos} persona(s) (${invitadosTexto}). Presenta el QR en el acceso.`,
+          `Hola ${persona.nombre}, adjuntamos tu código QR único. Cuida este código y compártelo solo con tus invitados. Desde los 10 años se requiere boleto. Las entradas adicionales se venderán el día del evento en el lugar donde se desarrollará la ceremonia. Este QR permite el ingreso para ${totalPermitidos} persona(s) (${invitadosTexto}). Presenta el QR en el acceso.`,
           [
             {
               filename: `${codigo}.png`,
@@ -70,21 +70,19 @@ export async function POST(req: NextRequest) {
                   Adjuntamos tu <strong>código QR único</strong> para la ceremonia de graduación. Este QR habilita el acceso para <strong>${totalPermitidos} persona${totalPermitidos === 1 ? "" : "s"}</strong> (${invitadosTexto}).
                 </p>
                 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
-                  ¡Felicidades por este gran logro! Te esperamos para celebrar juntos.
+                  ¡Te esperamos para celebrar juntos! 
                 </p>
+                <p style="margin:0 0 12px;font-size:18px;font-weight:600;"><strong>Importante</strong> </p>
                 <ul style="margin:0 0 12px 18px;padding:0;font-size:15px;line-height:1.6;">
                   <li style="margin-bottom:8px;">
                     Cuida este código y compártelo únicamente con tus invitados.
                   </li>
                   <li>
-                    Desde los <strong>10 años</strong> se requiere boleto individual.
+                    A partir de los <strong>10 años</strong> cada persona debe contar con su propio boleto.
                   </li>
                 </ul>
                 <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
-                  ¿Necesitas entradas adicionales? Contáctanos por WhatsApp o llamada al
-                  <a href="tel:+593995569101" style="color:#003976;text-decoration:none;font-weight:600;">099 556 9101</a>
-                  o
-                  <a href="tel:+593999791099" style="color:#003976;text-decoration:none;font-weight:600;">099 979 1099</a>.
+                  ¿Necesitas más entradas? Podrás comprarlas el día del evento en el lugar donde se llevará a cabo la ceremonia.
                 </p>
               </td>
             </tr>

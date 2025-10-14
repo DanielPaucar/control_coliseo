@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 
 type CodigoSummary = {
   id: number;
@@ -59,6 +60,16 @@ export default function GestionQRPage() {
   const [emailDrafts, setEmailDrafts] = useState<Record<number, string>>({});
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [resendingId, setResendingId] = useState<number | null>(null);
+  const { data: session } = useSession();
+  const role = session?.user?.role;
+  const canEditLimits = role === "admin";
+  const canResend = role === "admin" || role === "financiero";
+  const headerSubtitle = canEditLimits
+    ? "Busca asistentes por cédula, ajusta su capacidad de ingreso y reenvía los códigos por correo."
+    : "Busca asistentes por cédula y reenvía los códigos por correo.";
+  const codigosSubtitle = canEditLimits
+    ? "Administra los límites de ingreso y reenvía los QR cuando sea necesario."
+    : "Consulta los límites vigentes y reenvía los QR cuando sea necesario.";
 
   useEffect(() => {
     if (!alert) {
@@ -86,6 +97,10 @@ export default function GestionQRPage() {
 
   const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canResend) {
+      setAlert({ type: "error", message: "No tienes permisos para realizar esta acción." });
+      return;
+    }
     const normalized = cedula.trim();
 
     if (!normalized) {
@@ -138,6 +153,9 @@ export default function GestionQRPage() {
   };
 
   const handleLimitChange = (codigoId: number, value: string) => {
+    if (!canEditLimits) {
+      return;
+    }
     if (!/^\d*$/.test(value)) {
       return;
     }
@@ -149,6 +167,10 @@ export default function GestionQRPage() {
   };
 
   const handleUpdateLimit = async (codigoId: number) => {
+    if (!canEditLimits) {
+      setAlert({ type: "error", message: "Solo los administradores pueden actualizar el número de entradas." });
+      return;
+    }
     const draft = limitDrafts[codigoId] ?? "";
     const numeric = Number(draft);
 
@@ -200,6 +222,10 @@ export default function GestionQRPage() {
   };
 
   const handleResend = async (codigoId: number) => {
+    if (!canResend) {
+      setAlert({ type: "error", message: "No tienes permisos para reenviar QRs." });
+      return;
+    }
     const correo = (emailDrafts[codigoId] ?? "").trim() || (persona?.correo ?? "");
 
     if (!correo) {
@@ -242,6 +268,16 @@ export default function GestionQRPage() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-brand-gradient text-white">
       <div className="absolute inset-0 bg-brand-sheen" aria-hidden />
+      {alert ? (
+        <div className="pointer-events-none fixed inset-x-0 top-6 z-50 flex justify-center px-4">
+          <div
+            role="status"
+            className={`pointer-events-auto inline-flex max-w-xl items-center rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg shadow-black/15 backdrop-blur ${ALERT_STYLES[alert.type]}`}
+          >
+            {alert.message}
+          </div>
+        </div>
+      ) : null}
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-10 px-6 py-12">
         <header className="card-surface flex flex-col gap-6 rounded-3xl px-8 py-10 text-brand-primary shadow-lg shadow-black/10 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-5">
@@ -252,7 +288,7 @@ export default function GestionQRPage() {
               <p className="text-xs uppercase tracking-[0.4em] text-brand-accent/70">Eventos ISTE</p>
               <h1 className="text-3xl font-semibold text-brand-primary">Gestión de QR</h1>
               <p className="text-sm text-brand-accent/80">
-                Busca asistentes por cédula, ajusta su capacidad de ingreso y reenvía los códigos por correo.
+                {headerSubtitle}
               </p>
             </div>
           </div>
@@ -288,14 +324,6 @@ export default function GestionQRPage() {
               </p>
             </div>
           </form>
-          {alert ? (
-            <div
-              role="status"
-              className={`mt-6 inline-flex max-w-xl items-center rounded-2xl border px-4 py-3 text-sm font-semibold shadow-md shadow-black/10 backdrop-blur ${ALERT_STYLES[alert.type]}`}
-            >
-              {alert.message}
-            </div>
-          ) : null}
         </section>
 
         {busquedaRealizada && !persona ? (
@@ -337,9 +365,7 @@ export default function GestionQRPage() {
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h2 className="text-xl font-semibold text-white/90">Códigos asociados</h2>
-                  <p className="text-sm text-white/70">
-                    Administra los límites de ingreso y reenvía los QR cuando sea necesario.
-                  </p>
+                  <p className="text-sm text-white/70">{codigosSubtitle}</p>
                 </div>
                 <div className="rounded-2xl bg-brand-secondary/20 px-4 py-2 text-sm font-semibold text-white/90">
                   {persona.codigos.length} código{persona.codigos.length === 1 ? "" : "s"}
@@ -353,9 +379,9 @@ export default function GestionQRPage() {
               ) : (
                 <div className="mt-6 space-y-6">
                   {codigosOrdenados.map((codigo) => {
-                    const limitDraft = limitDrafts[codigo.id] ?? "";
+                    const limitDraft = canEditLimits ? limitDrafts[codigo.id] ?? "" : String(codigo.maxUsos);
                     const correoDraft = emailDrafts[codigo.id] ?? persona.correo ?? "";
-                    const limitDirty = Number(limitDraft) !== codigo.maxUsos && limitDraft !== "";
+                    const limitDirty = canEditLimits && Number(limitDraft) !== codigo.maxUsos && limitDraft !== "";
                     return (
                       <article
                         key={codigo.id}
@@ -396,19 +422,26 @@ export default function GestionQRPage() {
                                 min={codigo.usosActual}
                                 value={limitDraft}
                                 onChange={(event) => handleLimitChange(codigo.id, event.target.value)}
-                                className="w-full rounded-2xl border border-white/20 bg-white/90 px-4 py-3 text-sm text-brand-primary shadow-inner focus:border-brand-secondary focus:outline-none focus:ring-2 focus:ring-brand-secondary/40"
+                                disabled={!canEditLimits}
+                                className={`w-full rounded-2xl border border-white/20 bg-white/90 px-4 py-3 text-sm text-brand-primary shadow-inner focus:border-brand-secondary focus:outline-none focus:ring-2 focus:ring-brand-secondary/40 ${
+                                  canEditLimits ? "" : "cursor-not-allowed opacity-80"
+                                }`}
                               />
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateLimit(codigo.id)}
-                                disabled={updatingId === codigo.id || !limitDraft || !limitDirty}
-                                className="inline-flex items-center justify-center rounded-2xl bg-brand-primary px-4 py-3 text-sm font-semibold text-white shadow-md shadow-brand-primary/30 transition hover:bg-brand-secondary disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {updatingId === codigo.id ? "Guardando…" : "Actualizar"}
-                              </button>
+                              {canEditLimits ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateLimit(codigo.id)}
+                                  disabled={updatingId === codigo.id || !limitDraft || !limitDirty}
+                                  className="inline-flex items-center justify-center rounded-2xl bg-brand-primary px-4 py-3 text-sm font-semibold text-white shadow-md shadow-brand-primary/30 transition hover:bg-brand-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {updatingId === codigo.id ? "Guardando…" : "Actualizar"}
+                                </button>
+                              ) : null}
                             </div>
                             <p className="text-xs text-white/70">
-                              Debe ser al menos igual a los usos ya registrados ({codigo.usosActual}).
+                              {canEditLimits
+                                ? `Debe ser al menos igual a los usos ya registrados (${codigo.usosActual}).`
+                                : "Solo lectura. Para ajustes contacta a la Unidad de TEI."}
                             </p>
                           </div>
 
@@ -422,19 +455,24 @@ export default function GestionQRPage() {
                                 value={correoDraft}
                                 onChange={(event) => handleEmailChange(codigo.id, event.target.value)}
                                 placeholder="correo@ejemplo.com"
-                                className="w-full rounded-2xl border border-white/20 bg-white/90 px-4 py-3 text-sm text-brand-primary shadow-inner focus:border-brand-secondary focus:outline-none focus:ring-2 focus:ring-brand-secondary/40"
+                                disabled={!canResend}
+                                className={`w-full rounded-2xl border border-white/20 bg-white/90 px-4 py-3 text-sm text-brand-primary shadow-inner focus:border-brand-secondary focus:outline-none focus:ring-2 focus:ring-brand-secondary/40 ${
+                                  canResend ? "" : "cursor-not-allowed opacity-80"
+                                }`}
                               />
                               <button
                                 type="button"
                                 onClick={() => handleResend(codigo.id)}
-                                disabled={resendingId === codigo.id || !correoDraft.trim()}
+                                disabled={!canResend || resendingId === codigo.id || !correoDraft.trim()}
                                 className="inline-flex items-center justify-center rounded-2xl bg-brand-secondary px-4 py-3 text-sm font-semibold text-white shadow-md shadow-brand-secondary/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {resendingId === codigo.id ? "Enviando…" : "Enviar"}
                               </button>
                             </div>
                             <p className="text-xs text-white/70">
-                              Se enviará el mismo QR en formato PNG con la información registrada.
+                              {canResend
+                                ? "Se enviará el mismo QR en formato PNG con la información registrada."
+                                : "No tienes permisos para reenviar correos desde este módulo."}
                             </p>
                           </div>
                         </div>

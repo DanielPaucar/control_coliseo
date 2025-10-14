@@ -59,6 +59,13 @@ const optionsByRole: Record<AppUserRole, MenuOption[]> = {
       description: "Indicadores y métricas del evento",
       gradient: BRAND_GRADIENTS.deep,
     },
+    {
+      href: "/limpieza",
+      label: "Limpieza de datos",
+      icon: "🧹",
+      description: "Libera registros históricos y archivos temporales",
+      gradient: BRAND_GRADIENTS.hybrid,
+    },
   ],
   financiero: [
     {
@@ -67,6 +74,13 @@ const optionsByRole: Record<AppUserRole, MenuOption[]> = {
       icon: "📊",
       description: "Reportes de ingresos y ocupación",
       gradient: BRAND_GRADIENTS.sky,
+    },
+    {
+      href: "/gestion-qr",
+      label: "Gestión de QR",
+      icon: "✉️",
+      description: "Consulta y reenvía códigos por correo",
+      gradient: BRAND_GRADIENTS.hybrid,
     },
     {
       href: "/generar-visitantes",
